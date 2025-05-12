@@ -70,25 +70,21 @@ class IMLAIterator(SamplingIterator):
                 f"Missing required IMLA parameters: {', '.join(missing_params)}"
             )
 
-        self.inner_iteration = inner_optim_params.get("iteration", "PGD")
-        self.inner_params_algo = inner_optim_params.get(
-            "params_algo", {"stepsize": 1e-4}
-        )
-        self.inner_max_iter = int(inner_optim_params.get("max_iter", 50))
-        self.inner_crit_conv = inner_optim_params.get("crit_conv", "residual")
-        self.inner_early_stop = inner_optim_params.get("early_stop", True)
-        self.inner_verbose = inner_optim_params.get("verbose", False)
-        self.clip = clip
+        self.inner_params_algo = inner_optim_params
 
 
     def forward(
         self,
-        x: Tensor,  # current state X_n
+        X: Dict[str, Tensor],  # current state X_n
         y: Tensor,  # original measurement
         physics: Physics,  # original physics
         cur_data_fidelity: DataFidelity,  # original data fidelity
         cur_prior: Prior,  # original prior
-    ) -> Tensor:
+    ) -> Dict[str, Tensor]:
+        print(X)
+        x = X["x"]
+        if not hasattr(self, "ids"):
+            self.ids = [id(cur_data_fidelity), id(cur_prior)]
         delta = self.algo_params["step_size"]
         lambd = self.algo_params["lambda"]
 
@@ -107,21 +103,15 @@ class IMLAIterator(SamplingIterator):
         )
 
         # config and run optimiser
-        inner_params = self.inner_params_algo.copy()
         try:
             # pass the ORIGINAL prior and the NEW inner_data_fidelity
             # BUG: slow startup here i think
             # we should really cache this object and update the u value on data fidelity manutally
             # check ids of objects for caching
             inner_model = optim_builder(
-                iteration=self.inner_iteration,
                 prior=cur_prior,
                 data_fidelity=inner_data_fidelity,
-                max_iter=self.inner_max_iter,
-                crit_conv=self.inner_crit_conv,
-                early_stop=self.inner_early_stop,
-                verbose=self.inner_verbose,
-                params_algo={"lambda": lambd, **inner_params},
+                **self.inner_params_algo
             )
         except Exception as e:
             raise RuntimeError(f"Failed to build inner optimizer: {e}") from e
@@ -134,5 +124,5 @@ class IMLAIterator(SamplingIterator):
         # undo the sub X_{n+1} = 2*v - X_n
         x_next = 2.0 * v_star.detach() - x.detach()
 
-        return x_next
+        return {"x": x_next}
 
