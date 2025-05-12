@@ -116,12 +116,10 @@ class IMLAIterator(SamplingIterator):
         except Exception as e:
             raise RuntimeError(f"Failed to build inner optimizer: {e}") from e
 
-        v_star , metrics = inner_model(
+        v_star = inner_model(
             y=y,  # original y
             physics=physics,  # original physics
-            compute_metrics=True,
         )
-        print(metrics)
 
         # undo the sub X_{n+1} = 2*v - X_n
         x_next = 2.0 * v_star.detach() - x.detach()
