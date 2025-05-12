@@ -9,7 +9,7 @@ from deepinv.optim.data_fidelity import DataFidelity
 from deepinv.optim.optimizers import optim_builder
 from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
 
-
+# TODO: add check for explicit prior
 class _InnerIMLADataFidelity(DataFidelity):
     """
     this is f(v) + 1/delta l2(v, u) 
@@ -41,7 +41,7 @@ class _InnerIMLADataFidelity(DataFidelity):
         return original_grad + quad_grad
 
 
-
+# BUG: IMLA tests not passing atm
 class IMLAIterator(SamplingIterator):
     """
     Implicit Midpoint Langevin Algorithm (IMLA) Iterator (using optim_builder).
@@ -52,9 +52,12 @@ class IMLAIterator(SamplingIterator):
         algo_params: Dict[str, Any],
         inner_optim_params: Dict[str, Any] = {
             "iteration": "PGD",
-            "params_algo": {"stepsize": 1e-4},
-            "max_iter": 50,
-            "crit_conv": 1e-4,
+            "params_algo": {"lambda": 1.0, "stepsize": 1e-6},
+            "max_iter": 5000,
+            "thres_conv": 1e-4,
+            "crit_conv": "residual",
+            "verbose": True,
+            "early_stop": True,
         },
         clip: Optional[Tuple[float, float]] = None,
     ):
@@ -63,8 +66,6 @@ class IMLAIterator(SamplingIterator):
         missing_params = []
         if "step_size" not in self.algo_params:
             missing_params.append("step_size")
-        if "lambda" not in self.algo_params:
-            missing_params.append("lambda")
         if missing_params:
             raise ValueError(
                 f"Missing required IMLA parameters: {', '.join(missing_params)}"
@@ -80,13 +81,12 @@ class IMLAIterator(SamplingIterator):
         physics: Physics,  # original physics
         cur_data_fidelity: DataFidelity,  # original data fidelity
         cur_prior: Prior,  # original prior
+        iteration: int,
     ) -> Dict[str, Tensor]:
-        print(X)
         x = X["x"]
         if not hasattr(self, "ids"):
             self.ids = [id(cur_data_fidelity), id(cur_prior)]
         delta = self.algo_params["step_size"]
-        lambd = self.algo_params["lambda"]
 
         # prep for inner problem
         xi = torch.randn_like(x)
@@ -116,10 +116,12 @@ class IMLAIterator(SamplingIterator):
         except Exception as e:
             raise RuntimeError(f"Failed to build inner optimizer: {e}") from e
 
-        v_star = inner_model(
+        v_star , metrics = inner_model(
             y=y,  # original y
             physics=physics,  # original physics
+            compute_metrics=True,
         )
+        print(metrics)
 
         # undo the sub X_{n+1} = 2*v - X_n
         x_next = 2.0 * v_star.detach() - x.detach()

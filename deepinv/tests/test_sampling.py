@@ -4,6 +4,7 @@ import numpy as np
 
 import deepinv as dinv
 from deepinv.optim.data_fidelity import L2
+from deepinv.optim.prior import Prior, Tikhonov
 from deepinv.sampling import ULA, SKRock, DiffPIR, DPS, sampling_builder, DDRM
 
 SAMPLING_ALGOS = ["DDRM", "ULA", "SKRock"]
@@ -55,6 +56,16 @@ class GaussianScore(torch.nn.Module):
     def grad(self, x, sigma):
         return x / self.sigma_prior2
 
+class GaussianPrior(Prior):
+    def __init__(self, sigma_prior):
+        super().__init__()
+        self.sigma_prior2 = sigma_prior**2
+
+    def fn(self, x, *args, **kwargs):
+        return 0.5 * torch.sum(x**2) / self.sigma_prior2
+
+    def grad(self, x, *args, **kwargs):
+        return x / self.sigma_prior2
 
 class GaussianDenoiser(torch.nn.Module):
     def __init__(self, sigma_prior):
@@ -190,18 +201,17 @@ def test_algo_inpaint(name_algo, device):
 
 
 # tests for sample_builder
-BUILD_ALGOS = ["ULA", "SKRock"]
+BUILD_ALGOS = ["ULA", "SKRock", "IMLA"]
 
 
 def choose_algo_build(algo, likelihood, thresh_conv, sigma, sigma_prior):
-    prior = GaussianScore(sigma_prior)
-
     if algo == "ULA":
         params = {
             "step_size": 0.01 / (1 / sigma**2 + 1 / sigma_prior**2),
             "alpha": 1.0,
             "sigma": 1.0,
         }
+        prior = GaussianScore(sigma_prior)
     elif algo == "SKRock":
         params = {
             "step_size": 1 / (1 / sigma**2 + 1 / sigma_prior**2),
@@ -210,6 +220,12 @@ def choose_algo_build(algo, likelihood, thresh_conv, sigma, sigma_prior):
             "eta": 0.05,
             "sigma": 1.0,
         }
+        prior = GaussianScore(sigma_prior)
+    elif algo == "IMLA":
+        params = {
+            "step_size": 0.01,
+        }
+        prior = Tikhonov()
     else:
         raise Exception("The sampling algorithm doesn't exist")
 
@@ -221,9 +237,8 @@ def choose_algo_build(algo, likelihood, thresh_conv, sigma, sigma_prior):
         params_algo=params,
         max_iter=500,
         burnin_ratio=0.2,
-        thinning=1,
+        thinning=2,
         verbose=True,
-        clip=(-100, 100),
     )
 
     return out
@@ -240,7 +255,7 @@ def test_build_algo(algo, imsize, device):
     physics.noise_model = dinv.physics.GaussianNoise(sigma)
     y = physics(test_sample)
 
-    convergence_crit = 0.1  # for fast tests
+    convergence_crit = 0.01  # for fast tests
     likelihood = L2(sigma=sigma)
     f = choose_algo_build(
         algo,
@@ -252,7 +267,7 @@ def test_build_algo(algo, imsize, device):
 
     xmean, xvar = f.sample(y, physics, seed=0)
 
-    tol = 5  # can be lowered?
+    tol = 0.5  # can be lowered?
     sigma2 = sigma**2
     sigma_prior2 = sigma_prior**2
 
