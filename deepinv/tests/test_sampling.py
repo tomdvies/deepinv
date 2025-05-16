@@ -56,6 +56,7 @@ class GaussianScore(torch.nn.Module):
     def grad(self, x, sigma):
         return x / self.sigma_prior2
 
+
 class GaussianPrior(Prior):
     def __init__(self, sigma_prior):
         super().__init__()
@@ -66,6 +67,7 @@ class GaussianPrior(Prior):
 
     def grad(self, x, *args, **kwargs):
         return x / self.sigma_prior2
+
 
 class GaussianDenoiser(torch.nn.Module):
     def __init__(self, sigma_prior):

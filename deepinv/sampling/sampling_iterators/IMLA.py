@@ -9,25 +9,27 @@ from deepinv.optim.data_fidelity import DataFidelity
 from deepinv.optim.optimizers import optim_builder
 from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
 
+
 # TODO: add check for explicit prior
 class _InnerIMLADataFidelity(DataFidelity):
     """
-    this is f(v) + 1/delta l2(v, u) 
+    this is f(v) + 1/delta l2(v, u)
     where apriori we have subbed v = 1/2x + 1/2 Xn
     and u = Xn + root(delta/2) xi
     """
+
     def __init__(self, original_data_fidelity: DataFidelity, u: Tensor, delta: float):
         super().__init__()
         self.original_df = original_data_fidelity
-        self.u = u        
-        self.d = L2Distance(sigma=2/delta)
+        self.u = u
+        self.d = L2Distance(sigma=2 / delta)
 
     def fn(self, v: Tensor, y: Tensor, physics: Physics, *args, **kwargs) -> Tensor:
-        # orig data fidelity cost 
+        # orig data fidelity cost
         original_cost = self.original_df.fn(v, y, physics, *args, **kwargs)
-        
+
         # l2 from v to u
-        quad_cost = self.d.fn(v,self.u)
+        quad_cost = self.d.fn(v, self.u)
 
         return original_cost + quad_cost
 
@@ -36,7 +38,7 @@ class _InnerIMLADataFidelity(DataFidelity):
         original_grad = self.original_df.grad(v, y, physics, *args, **kwargs)
 
         # quadratic gradient
-        quad_grad = self.d.grad(v,self.u)
+        quad_grad = self.d.grad(v, self.u)
 
         return original_grad + quad_grad
 
@@ -72,7 +74,6 @@ class IMLAIterator(SamplingIterator):
             )
 
         self.inner_params_algo = inner_optim_params
-
 
     def forward(
         self,
@@ -111,7 +112,7 @@ class IMLAIterator(SamplingIterator):
             inner_model = optim_builder(
                 prior=cur_prior,
                 data_fidelity=inner_data_fidelity,
-                **self.inner_params_algo
+                **self.inner_params_algo,
             )
         except Exception as e:
             raise RuntimeError(f"Failed to build inner optimizer: {e}") from e
@@ -125,4 +126,3 @@ class IMLAIterator(SamplingIterator):
         x_next = 2.0 * v_star.detach() - x.detach()
 
         return {"x": x_next}
-

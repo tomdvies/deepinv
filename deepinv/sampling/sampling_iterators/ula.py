@@ -83,7 +83,7 @@ class ULAIterator(SamplingIterator):
 
     def forward(
         self,
-        X: Tensor,
+        X: Dict[str, Tensor],
         y: Tensor,
         physics: Physics,
         cur_data_fidelity: DataFidelity,
@@ -91,7 +91,7 @@ class ULAIterator(SamplingIterator):
         iteration: int,
         *args,
         **kwargs,
-    ) -> Tensor:
+    ) -> Dict[str, Tensor]:
         r"""
         Performs a single ULA sampling step using the Unadjusted Langevin Algorithm.
 
@@ -110,7 +110,7 @@ class ULAIterator(SamplingIterator):
         :param ScorePrior cur_prior: Score-based prior model for :math:`\nabla \log p(x)`
         :param int iteration: Current iteration number in the sampling process (zero-indexed)
 
-        :return: Dictionary `{"est": x}` containing the next state :math:`x_{t+1}` in the Markov chain. 
+        :return: Dictionary `{"est": x}` containing the next state :math:`x_{t+1}` in the Markov chain.
         :rtype: Dict
         """
         x = X["x"]

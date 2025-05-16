@@ -69,7 +69,7 @@ class BaseSampling(Reconstructor):
         data_fidelity: DataFidelity,
         prior: Prior,
         max_iter: int = 100,
-        callback: Callable = lambda x: x,
+        callback: Callable = lambda X, *args, **kwargs: None,
         burnin_ratio: float = 0.2,
         thresh_conv: float = 1e-3,
         crit_conv: str = "residual",
@@ -106,6 +106,8 @@ class BaseSampling(Reconstructor):
         physics: Physics,
         X_init: Union[torch.Tensor, None] = None,
         seed: Union[int, None] = None,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         r"""
         Run the MCMC sampling chain and return the posterior sample mean.
@@ -165,7 +167,7 @@ class BaseSampling(Reconstructor):
             ... )
             >>> means, vars = sampler.sample(measurements, forward_operator)
         """
-        
+
         # Don't store computational graphs
         with torch.no_grad():
             # Set random seed if provided
@@ -176,11 +178,17 @@ class BaseSampling(Reconstructor):
             if x_init is None:
                 # if linear take adjoint (pseudo-inverse can be a bit unstable) else fall back to pseudoinverse
                 if isinstance(physics, LinearPhysics):
-                    X = self.iterator.initialize_latent_variables(physics.A_adjoint(y), y, physics, self.data_fidelity, self.prior)
+                    X = self.iterator.initialize_latent_variables(
+                        physics.A_adjoint(y), y, physics, self.data_fidelity, self.prior
+                    )
                 else:
-                    X = self.iterator.initialize_latent_variables(physics.A_dagger(y), y, physics, self.data_fidelity, self.prior)
+                    X = self.iterator.initialize_latent_variables(
+                        physics.A_dagger(y), y, physics, self.data_fidelity, self.prior
+                    )
             else:
-                X = self.iterator.initialize_latent_variables(x_init, y, physics, self.data_fidelity, self.prior)
+                X = self.iterator.initialize_latent_variables(
+                    x_init, y, physics, self.data_fidelity, self.prior
+                )
 
             if self.history:
                 if isinstance(self.history, deque):
@@ -215,8 +223,11 @@ class BaseSampling(Reconstructor):
                     **kwargs,
                 )
 
-                if it >= (self.max_iter * self.burnin_ratio) and it % self.thinning == 0:
-                    self.callback(X)
+                if (
+                    it >= (self.max_iter * self.burnin_ratio)
+                    and it % self.thinning == 0
+                ):
+                    self.callback(X=X, statistics=statistics, iter=it)
                     # Store previous means and variances for convergence check
                     if it >= (self.max_iter - self.thinning):
                         mean_prevs = [stat.mean().clone() for stat in statistics]
@@ -327,6 +338,7 @@ def sampling_builder(
     data_fidelity: DataFidelity,
     prior: Prior,
     params_algo: Dict = {},
+    callback: Callable = lambda X, *args, **kwargs: None,
     max_iter: int = 100,
     thresh_conv: float = 1e-3,
     burnin_ratio: float = 0.2,
@@ -346,6 +358,7 @@ def sampling_builder(
     :param burnin_ratio: Percentage of iterations for burn-in
     :param thinning: Integer to thin the Monte Carlo samples
     :param history_size: Number of most recent samples to store in memory. If `True`, all samples are stored. If `False`, no samples are stored. If an integer, it specifies the number of most recent samples to store. Default: 5
+    :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics.
     :param verbose: Whether to print progress
     :param kwargs: Additional keyword arguments passed to the iterator constructor when a string is provided as the iterator parameter
     :return: Configured BaseSampling instance in eval mode
@@ -362,5 +375,5 @@ def sampling_builder(
         thinning=thinning,
         history_size=history_size,
         verbose=verbose,
+        callback=callback,
     ).eval()
-
