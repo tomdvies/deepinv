@@ -122,4 +122,5 @@ class ULAIterator(SamplingIterator):
         x_t = x + self.algo_params["step_size"] * (lhood + lprior) + noise
         if self.clip:
             x_t = projbox(x_t, self.clip[0], self.clip[1])
+        # print(f"min: {torch.min(x_t)}, max: {torch.max(x_t)}")
         return {"x": x_t}

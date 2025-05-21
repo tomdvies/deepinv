@@ -62,23 +62,19 @@ class MLAIterator(SamplingIterator):
         **kwargs,
     ) -> Dict[str, Tensor]:
         x = X["x"]
-        noise = torch.randn_like(x) * np.sqrt(
-            2 * self.algo_params["step_size"]) * torch.sqrt(d2_phi(x)
-        )
-
-        # lhood = -cur_data_fidelity.grad(x, y, physics)
-        #
+        noise = torch.randn_like(x) *torch.sqrt(2 * self.algo_params["step_size"] * self.potential.hessian(x))
         # lprior = (
         #     -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         # )
-        yk1 = grad_phi(x)
+        # yk1 = grad_phi(x)
+        yk1 = self.potential.grad(x)
         # yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
-        lhood = cur_data_fidelity.grad(x, y, physics)
+        lhood = -cur_data_fidelity.grad(x, y, physics)
         lprior = (
             -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         )
         yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
-        xk = grad_phi_star(yk2)
+        xk = self.potential.grad_conj(yk2)
 
         # x_t = self.potential.grad_conj(
         #         self.potential.grad(x) +

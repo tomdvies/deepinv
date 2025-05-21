@@ -71,14 +71,14 @@ class MYULAIterator(SamplingIterator):
         x = X["x"]
         noise = torch.randn_like(x) * np.sqrt(2 * self.algo_params["step_size"])
 
-        # lhood = -physics.A_vjp(x, cur_data_fidelity.grad_d(physics.A(x) + self.algo_params["b"], y))
-        lhood = -gradF(x)
+        lhood = -physics.A_vjp(x, cur_data_fidelity.grad_d(physics.A(x) + self.algo_params["b"], y))
+        # lhood = -gradF(x)
 
-        # lprior = (1 / self.algo_params["lambda"]) * cur_prior.prox(
-        #     x, gamma=self.algo_params["lambda"]
-        # )
+        lprior = (1 / self.algo_params["lambda"]) * cur_prior.prox(
+            x, gamma=self.algo_params["lambda"]
+        )
         
-        lprior = (1/self.algo_params["lambda"]) * self.tv(x, ths=self.algo_params["lambda"])
+        # lprior = (1/self.algo_params["lambda"]) * self.tv(x, ths=self.algo_params["lambda"])
 
         x_t = (
              (1 - self.algo_params["step_size"] / self.algo_params["lambda"]) * # this is not in the paper's code?????
