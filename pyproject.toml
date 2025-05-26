@@ -20,6 +20,7 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 version = "0.3.0"
+# TODO: statsmodels only needed for acf plot
 dependencies = [
     "numpy",
     "matplotlib",
@@ -32,6 +33,8 @@ dependencies = [
     "wandb",
     "scipy",
     "natsort",
+    "statsmodels>=0.14.4",
+    "memory-profiler>=0.61.0",
 ]
 
 [tool.setuptools]

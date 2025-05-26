@@ -121,7 +121,8 @@ def GSDRUNet(
                 file_name=file_name,
             )
         else:
-            ckpt = torch.load(pretrained, map_location=lambda storage, loc: storage)
+            # BUG: can't load weights without this
+            ckpt = torch.load(pretrained, map_location=lambda storage, loc: storage, weights_only=False)
 
         if "state_dict" in ckpt:
             ckpt = ckpt["state_dict"]

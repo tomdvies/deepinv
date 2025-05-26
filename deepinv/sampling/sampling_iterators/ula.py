@@ -16,7 +16,7 @@ from typing import Dict, Optional, Tuple, Any
 
 class ULAIterator(SamplingIterator):
     r"""
-    Projected Plug-and-Play Unadjusted Langevin Algorithm.
+    Projected (Plug-and-Play) Unadjusted Langevin Algorithm.
 
     The algorithm runs the following markov chain iteration
     (Algorithm 2 from https://arxiv.org/abs/2103.04715):
@@ -49,13 +49,13 @@ class ULAIterator(SamplingIterator):
          - Description
        * - step_size
          - float
-         - Step size :math:`\eta` (default: 1.0)
+         - Step size :math:`\eta`
        * - alpha
          - float
-         - Regularization parameter :math:`\alpha` (default: 1.0)
+         - Regularization parameter :math:`\alpha`
        * - sigma
          - float
-         - Noise level for the score model (default: 0.05)
+         - Noise level for the score model (only required for score priors)
 
     :return: Next state :math:`X_{t+1}` in the Markov chain
     :rtype: torch.Tensor
@@ -71,8 +71,8 @@ class ULAIterator(SamplingIterator):
             missing_params.append("step_size")
         if "alpha" not in algo_params:
             missing_params.append("alpha")
-        if "sigma" not in algo_params:
-            missing_params.append("sigma")
+        # if "sigma" not in algo_params:
+        #     missing_params.append("sigma")
 
         if missing_params:
             raise ValueError(
@@ -122,5 +122,4 @@ class ULAIterator(SamplingIterator):
         x_t = x + self.algo_params["step_size"] * (lhood + lprior) + noise
         if self.clip:
             x_t = projbox(x_t, self.clip[0], self.clip[1])
-        # print(f"min: {torch.min(x_t)}, max: {torch.max(x_t)}")
         return {"x": x_t}

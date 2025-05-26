@@ -32,7 +32,7 @@ def d2_phi(x):
 
 
 class MLAIterator(SamplingIterator):
-    def __init__(self, algo_params: Dict[str, float]):
+    def __init__(self, algo_params: Dict[str, float], **kwargs):
         super().__init__(algo_params)
 
         # Raise an error if these are not supplied
@@ -62,19 +62,26 @@ class MLAIterator(SamplingIterator):
         **kwargs,
     ) -> Dict[str, Tensor]:
         x = X["x"]
+        # print(f"new iteration")
         noise = torch.randn_like(x) *torch.sqrt(2 * self.algo_params["step_size"] * self.potential.hessian(x))
+        # print(f"max: {torch.max(noise)} min: {torch.min(noise)}")
         # lprior = (
         #     -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         # )
         # yk1 = grad_phi(x)
         yk1 = self.potential.grad(x)
+        # print(f"max: {torch.max(yk1)} min: {torch.min(yk1)}")
         # yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
         lhood = -cur_data_fidelity.grad(x, y, physics)
+        # print(f"max: {torch.max(lhood)} min: {torch.min(lhood)}")
         lprior = (
             -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         )
+        # print(f"max: {torch.max(lprior)} min: {torch.min(lprior)}")
         yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
-        xk = self.potential.grad_conj(yk2)
+        # print(f"max: {torch.max(yk2)} min: {torch.min(yk2)}")
+        xk = self.potential.grad_conj(yk2).clamp(1e-6,None)
+        # print(f"max: {torch.max(xk)} min: {torch.min(xk)}")
 
         # x_t = self.potential.grad_conj(
         #         self.potential.grad(x) +
