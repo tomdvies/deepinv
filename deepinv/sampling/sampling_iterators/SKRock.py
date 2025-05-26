@@ -6,7 +6,7 @@ import time as time
 from typing import Dict, Optional, Tuple, Any
 
 from deepinv.optim import ScorePrior
-from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
+from deepinv.sampling.sampling_iterators.sampling_iterator import SamplingIterator
 from deepinv.optim.data_fidelity import DataFidelity
 from deepinv.physics import Physics
 
@@ -81,7 +81,7 @@ class SKRockIterator(SamplingIterator):
 
     def forward(
         self,
-        X: Dict[str, Any],
+        X: Dict[str, torch.Tensor],
         y: torch.Tensor,
         physics: Physics,
         cur_data_fidelity: DataFidelity,
@@ -89,7 +89,7 @@ class SKRockIterator(SamplingIterator):
         iteration: int,
         *args,
         **kwargs,
-    ) -> Dict[str,torch.Tensor]:
+    ) -> Dict[str, torch.Tensor]:
         r"""
         Performs a single SK-ROCK sampling step.
 

@@ -22,6 +22,12 @@ class BaseSampling(Reconstructor):
     r"""
     Base class for Monte Carlo sampling.
 
+    This class aims to sample from the posterior distribution :math:`p(x|y)`, where :math:`y` represents the observed
+    measurements and :math:`x` is the (unknown) image to be reconstructed. The sampling process generates a
+    sequence of states (samples) :math:`X_0, X_1, \ldots, X_N` from a Markov chain. Each state :math:`X_k` contains the
+    current estimate of the unknown image, denoted :math:`x_k`, and may include other latent variables.
+    The class then computes statistics (e.g., image posterior mean, image posterior variance) from the samples :math:`X_k`.
+
     This class can be used to create new Monte Carlo samplers by implementing the sampling kernel through :class:`deepinv.sampling.SamplingIterator`:
 
     ::
@@ -31,10 +37,15 @@ class BaseSampling(Reconstructor):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y, physics, data_fidelity, prior, params_algo):
+            def initialize_latent_variables(x, y, physics, data_fidelity, prior):
+                # initialize a latent variable
+                latent_z = g(x, y, physics, data_fidelity, prior)
+                return {"x": x, "z": latent_z}
+
+            def forward(self, X, y, physics, data_fidelity, prior, params_algo):
                 # run one sampling kernel iteration
-                new_x = f(x, y, physics, data_fidelity, prior, params_algo)
-                return new_x
+                new_X = f(X, y, physics, data_fidelity, prior, params_algo)
+                return new_X
 
         # create the sampler
         sampler = BaseSampler(MyIterator(), prior, data_fidelity, iterator_params)
@@ -62,7 +73,7 @@ class BaseSampling(Reconstructor):
     :param float burnin_ratio: Percentage of iterations used for burn-in period (between 0 and 1). Default: 0.2
     :param int thinning: Integer to thin the Monte Carlo samples (keeping one out of `thinning` samples). Default: 10
     :param float thresh_conv: The convergence threshold for the mean and variance. Default: ``1e-3``
-    :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics.
+    :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics. It is called with the current sample `X`, the current `statistics` (a list of Welford objects), and the current iteration number `iter` as keyword arguments.
     :param history_size: Number of most recent samples to store in memory. If `True`, all samples are stored. If `False`, no samples are stored. If an integer, it specifies the number of most recent samples to store. Default: 5
     :param bool verbose: Whether to print progress of the algorithm. Default: ``False``
     """
@@ -73,7 +84,7 @@ class BaseSampling(Reconstructor):
         data_fidelity: DataFidelity,
         prior: Prior,
         max_iter: int = 100,
-        callback: Callable = lambda X, *args, **kwargs: None,
+        callback: Callable = lambda X, **kwargs: None,
         burnin_ratio: float = 0.2,
         thresh_conv: float = 1e-3,
         crit_conv: str = "residual",
@@ -108,9 +119,8 @@ class BaseSampling(Reconstructor):
         self,
         y: torch.Tensor,
         physics: Physics,
-        X_init: Union[torch.Tensor, None] = None,
+        x_init: Union[torch.Tensor, None] = None,
         seed: Union[int, None] = None,
-        *args,
         **kwargs,
     ) -> torch.Tensor:
         r"""
@@ -118,7 +128,7 @@ class BaseSampling(Reconstructor):
 
         :param torch.Tensor y: The observed measurements
         :param Physics physics: Forward operator of your inverse problem
-        :param torch.Tensor X_init: Initial state of the Markov chain. If None, uses ``physics.A_adjoint(y)`` as the starting point
+        :param torch.Tensor x_init: Initial state of the Markov chain. If None, uses ``physics.A_adjoint(y)`` as the starting point
             Default: ``None``
         :param int seed: Optional random seed for reproducible sampling.
             Default: ``None``
@@ -127,7 +137,7 @@ class BaseSampling(Reconstructor):
         """
 
         # pass back out sample mean
-        return self.sample(y, physics, X_init=X_init, seed=seed)[0]
+        return self.sample(y, physics, x_init=x_init, seed=seed, **kwargs)[0]
 
     def sample(
         self,
@@ -153,7 +163,7 @@ class BaseSampling(Reconstructor):
         :param list g_statistics: List of functions for which to compute posterior statistics.
             The sampler will compute the posterior mean and variance of each function in the list.
             The input to these functions is a dictionary `d` which contains the current state of the sampler alongside any latent variables. `d["x"]` will always be the current image. See specific iterators for details on what (if any) latent variables they provide.
-            Default: ``lambda d: d["x"]`` (identity function on the iterate).
+            Default: ``lambda d: d["x"]`` (identity function on the image).
         :param Union[List[Callable], Callable] g_statistics: List of functions for which to compute posterior statistics, or a single function.
         :param kwargs: Additional arguments passed to the sampling iterator (e.g., proposal distributions)
         :return: | If a single g_statistic was specified: Returns tuple (mean, var) of torch.Tensors
@@ -167,7 +177,7 @@ class BaseSampling(Reconstructor):
             >>> # Using multiple statistics
             >>> sampler = BaseSampling(
             ...     iterator, data_fidelity, prior,
-            ...     g_statistics=[lambda d: d["x"], lambda d: d["x"]**2]
+            ...     g_statistics=[lambda X: X["x"], lambda X: X["x"]**2]
             ... )
             >>> means, vars = sampler.sample(measurements, forward_operator)
         """
@@ -626,10 +636,12 @@ def sampling_builder(
     thinning: int = 10,
     history_size: Union[int, bool] = 5,
     verbose: bool = False,
+    callback: Callable = lambda X, **kwargs: None,
     **kwargs,
 ) -> BaseSampling:
     r"""
     Helper function for building an instance of the :class:`deepinv.sampling.BaseSampling` class.
+    See the docs for :class:`deepinv.sampling.BaseSampling` for examples and more information.
 
     :param iterator: Either a SamplingIterator instance or a string naming the iterator class
     :param data_fidelity: Negative log-likelihood function
@@ -641,6 +653,7 @@ def sampling_builder(
     :param history_size: Number of most recent samples to store in memory. If `True`, all samples are stored. If `False`, no samples are stored. If an integer, it specifies the number of most recent samples to store. Default: 5
     :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics.
     :param verbose: Whether to print progress
+    :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics. It is called with the current sample `X`, the current `statistics` (a list of Welford objects), and the current iteration number `iter` as keyword arguments.
     :param kwargs: Additional keyword arguments passed to the iterator constructor when a string is provided as the iterator parameter
     :return: Configured BaseSampling instance in eval mode
     """
