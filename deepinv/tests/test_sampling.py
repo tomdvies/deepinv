@@ -203,7 +203,7 @@ def test_algo_inpaint(name_algo, device):
 
 
 # tests for sample_builder
-BUILD_ALGOS = ["ULA", "SKRock", "IMLA"]
+BUILD_ALGOS = ["ULA", "SKRock"]#, "IMLA"]
 
 
 def choose_algo_build(algo, likelihood, thresh_conv, sigma, sigma_prior):

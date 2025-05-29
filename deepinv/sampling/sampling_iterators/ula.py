@@ -121,7 +121,7 @@ class ULAIterator(SamplingIterator):
         lhood = -cur_data_fidelity.grad(x, y, physics)
         #BUG: check if prior is a score prior
         lprior = (
-            -cur_prior.grad(x, sigma_denoiser=self.algo_params["sigma"]) * self.algo_params["alpha"]
+            -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         )
         x_t = x + self.algo_params["step_size"] * (lhood + lprior) + noise
         if self.clip:
