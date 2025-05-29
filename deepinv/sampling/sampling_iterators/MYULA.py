@@ -9,7 +9,7 @@ from deepinv.optim import PnP
 from deepinv.physics import Physics
 from deepinv.optim.prior import Prior, ScorePrior
 import deepinv as dinv
-from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
+from deepinv.sampling.sampling_iterators.sampling_iterator import SamplingIterator
 from deepinv.optim.data_fidelity import DataFidelity
 
 from typing import Dict, Optional, Tuple, Any
@@ -63,11 +63,6 @@ class MYULAIterator(SamplingIterator):
         *args,
         **kwargs,
     ) -> Dict[str, Tensor]:
-        def gradF(z):
-            Kz= physics.A(z)
-            inv_Kz= 1/(Kz+ self.algo_params["b"])
-            return  1 - physics.A_adjoint(y*inv_Kz) 
-
         x = X["x"]
         noise = torch.randn_like(x) * np.sqrt(2 * self.algo_params["step_size"])
 
@@ -81,7 +76,7 @@ class MYULAIterator(SamplingIterator):
         # lprior = (1/self.algo_params["lambda"]) * self.tv(x, ths=self.algo_params["lambda"])
 
         x_t = (
-             (1 - self.algo_params["step_size"] / self.algo_params["lambda"]) * # this is not in the paper's code?????
+             (1 - self.algo_params["step_size"] / self.algo_params["lambda"]) * 
                 x
             + self.algo_params["step_size"] * (lhood + lprior)
             + noise

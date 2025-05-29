@@ -286,8 +286,9 @@ class BaseSampling(Reconstructor):
                 return means[0], vars[0]
         return means, vars
 
+
     def plot_acf(self, g_statistic: Union[Callable, None] = None, lags: Union[int, None] = None,
-                 title: str = "ACF Plot", save_path: Union[str, None] = None,
+                 title: str = "ACF Plot (Tensor)", save_path: Union[str, None] = None,
                  img_type: str = "png", **kwargs):
         r"""
         Plot autocorrelation functions for Fourier components of the stored samples.
@@ -296,151 +297,6 @@ class BaseSampling(Reconstructor):
         in the history, calculates the variance of each Fourier component across the
         samples, and then plots the ACF for the components with minimum, maximum,
         and median variance.
-
-        :param Callable g_statistic: A function to extract the data (e.g., image tensor)
-            from each history item (dictionary). If ``None``, defaults to extracting
-            the tensor associated with the key ``"x"``. The function must return a
-            ``torch.Tensor`` that can be converted to a NumPy array suitable for 2D FFT.
-            Default: ``None``.
-        :param int, optional lags: The number of lags to include in the ACF plot.
-            If ``None``, ``statsmodels.graphics.tsaplots.plot_acf`` will use its default.
-            Default: ``None``.
-        :param str title: Title for the plot. Default: ``"ACF Plot"``.
-        :param str, optional save_path: Directory path to save the plot. If ``None``,
-            the plot is not saved. Default: ``None``.
-        :param str img_type: Image type/extension for saving (e.g., "png", "pdf").
-            Default: ``"png"``.
-        :param kwargs: Additional keyword arguments passed to
-            ``statsmodels.graphics.tsaplots.plot_acf``.
-        :raises RuntimeError: If history storage was disabled (``history_size=False``).
-
-        Example:
-            >>> sampler = BaseSampling(iterator, data_fidelity, prior, history_size=100)
-            >>> _, _ = sampler.sample(measurements, forward_operator)
-            >>> # Plot ACF for the default "x" component
-            >>> sampler.plot_acf(title="ACF for x", lags=50)
-            >>> # Assuming history items also contain a latent variable "z"
-            >>> # sampler.plot_acf(g_statistic=lambda X: X["z"], title="ACF for z") # Example for other keys
-        """
-        if self.history is False:
-            raise RuntimeError(
-                "Cannot plot ACF: history storage is disabled (history_size=False)"
-            )
-
-        chain_items = self.get_chain() # This now returns List[Dict[str, Any]]
-        if not chain_items or len(chain_items) < 2: # Need at least 2 samples for variance/ACF
-            print("History is empty or too short (need at least 2 samples), cannot plot ACF.")
-            return
-
-        if g_statistic is None:
-            g = lambda X: X["x"] # Default to extracting "x" from the dict
-        else:
-            g = g_statistic
-
-        try:
-            raw_chain_tensors = []
-            for item_idx, item in enumerate(chain_items):
-                tensor_val = g(item)
-                if not isinstance(tensor_val, torch.Tensor):
-                    raise ValueError(
-                        f"g_statistic must return a torch.Tensor. "
-                        f"Got {type(tensor_val)} for item {item_idx} from history."
-                    )
-                raw_chain_tensors.append(tensor_val)
-            
-            processed_chain = [t.detach().cpu().numpy() for t in raw_chain_tensors]
-            MC_chain = np.stack(processed_chain, axis=0)
-            del raw_chain_tensors  # Free memory
-        except Exception as e:
-            print(f"Error processing chain for ACF plot: {e}")
-            print("Ensure g_statistic extracts a suitable tensor from history items (dictionaries).")
-            return
-
-        if MC_chain.ndim < 3 or MC_chain.shape[-2] < 2 or MC_chain.shape[-1] < 2:
-            print(
-                f"MC_chain has shape {MC_chain.shape}, which is not suitable for 2D FFT "
-                "as required by this ACF plotting method (needs at least 3 dims like NCHW or NHW, with last two spatial dims >= 2). Skipping."
-            )
-            return
-
-        try:
-            MC_chain_fourier = np.abs(np.fft.fft2(MC_chain, axes=(-2, -1)))
-        except Exception as e:
-            print(f"Error during FFT: {e}. Ensure data shape {MC_chain.shape} is compatible.")
-            return
-            
-        del MC_chain
-
-        variance_array_fourier = np.var(MC_chain_fourier, axis=0)
-        variance_flat = variance_array_fourier.ravel()
-
-        if variance_flat.size == 0:
-            print("Fourier variance array is empty. Cannot plot ACF.")
-            return
-
-        mc_chain_fourier_flat_features = MC_chain_fourier.reshape(MC_chain_fourier.shape[0], -1)
-        del MC_chain_fourier
-
-        ind_min_variance = np.argmin(variance_flat)
-        chain_elem_min_variance = mc_chain_fourier_flat_features[:, ind_min_variance]
-
-        ind_max_variance = np.argmax(variance_flat)
-        chain_elem_max_variance = mc_chain_fourier_flat_features[:, ind_max_variance]
-
-        sorted_indices = np.argsort(variance_flat)
-        ind_median_variance = sorted_indices[len(sorted_indices) // 2]
-        chain_elem_median_variance = mc_chain_fourier_flat_features[:, ind_median_variance]
-
-        rc_params = {
-            'figure.figsize': (15, 15), 'font.size': 12, 
-            'axes.titlesize': 30, 'axes.labelsize': 30, 
-            'xtick.labelsize': 25, 'ytick.labelsize': 25, 'legend.fontsize': 10
-        }
-        with plt.rc_context(rc_params):
-            fig, ax = plt.subplots()
-
-            sm_plot_acf(chain_elem_median_variance, ax=ax, label='Median-speed component', alpha=None, lags=lags, **kwargs)
-            sm_plot_acf(chain_elem_max_variance, ax=ax, label='Slowest component', alpha=None, lags=lags, **kwargs)
-            sm_plot_acf(chain_elem_min_variance, ax=ax, label='Fastest component', alpha=None, lags=lags, **kwargs)
-
-            handles, labels_from_plot = ax.get_legend_handles_labels()
-            handles = handles[1::2]
-            labels_from_plot = labels_from_plot[1::2]
-            # The plot_acf from statsmodels creates multiple handles for each call (line and markers)
-            # We might want to simplify the legend if it becomes too cluttered.
-            # For now, let's use what statsmodels provides.
-            print(handles)
-            print(labels_from_plot)
-            ax.legend(handles=handles, labels=labels_from_plot, loc='best', shadow=True, numpoints=1)
-            ax.set_title(title)
-            ax.set_ylabel("ACF")
-            ax.set_xlabel("Lags")
-
-            if save_path:
-                safe_title = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in title).rstrip().replace(' ', '_')
-                filename = f"acr_{safe_title}.{img_type}"
-                full_save_path = f"{save_path}/{filename}" # In Python 3.6+ f-strings are good
-                # Consider creating the directory if it doesn't exist:
-                # import os
-                # os.makedirs(save_path, exist_ok=True)
-                try:
-                    plt.savefig(full_save_path, bbox_inches='tight', dpi=300)
-                    print(f"ACF plot saved to {full_save_path}")
-                except Exception as e:
-                    print(f"Error saving plot to {full_save_path}: {e}")
-            plt.show()
-
-    def plot_acf_tensor(self, g_statistic: Union[Callable, None] = None, lags: Union[int, None] = None,
-                 title: str = "ACF Plot (Tensor)", save_path: Union[str, None] = None,
-                 img_type: str = "png", **kwargs):
-        r"""
-        Plot autocorrelation functions for Fourier components of the stored samples, keeping data as tensors.
-
-        This method computes the 2D Fourier transform of the samples (e.g., images)
-        in the history, calculates the variance of each Fourier component across the
-        samples, and then plots the ACF for the components with minimum, maximum,
-        and median variance. This version attempts to keep data as PyTorch tensors
-        for as long as possible to conserve memory.
 
         :param Callable g_statistic: A function to extract the data (e.g., image tensor)
             from each history item (dictionary). If ``None``, defaults to extracting
@@ -476,7 +332,6 @@ class BaseSampling(Reconstructor):
 
             try:
                 MC_chain = None # Initialize as None
-                # Keep as tensors as long as possible
                 for item_idx, item in enumerate(chain_items):
                     tensor_val = g(item)                    
                     # Add a new leading dimension for stacking
@@ -496,19 +351,7 @@ class BaseSampling(Reconstructor):
                 print("Ensure g_statistic extracts a suitable tensor from history items (dictionaries).")
                 return
 
-            if MC_chain.ndim < 3 or MC_chain.shape[-2] < 2 or MC_chain.shape[-1] < 2:
-                print(
-                    f"MC_chain has shape {MC_chain.shape}, which is not suitable for 2D FFT "
-                    "as required by this ACF plotting method (needs at least 3 dims like NCHW or NHW, with last two spatial dims >= 2). Skipping."
-                )
-                return
-
-            try:
-                # Perform FFT using torch.fft
-                MC_chain_fourier = torch.abs(torch.fft.fft2(MC_chain, dim=(-2, -1)))
-            except Exception as e:
-                print(f"Error during FFT: {e}. Ensure data shape {MC_chain.shape} is compatible.")
-                return
+            MC_chain_fourier = torch.abs(torch.fft.fft2(MC_chain, dim=(-2, -1)))
                 
             variance_array_fourier = torch.var(MC_chain_fourier, dim=0)
 
@@ -520,9 +363,6 @@ class BaseSampling(Reconstructor):
 
             mc_chain_fourier_flat_features = MC_chain_fourier.reshape(MC_chain_fourier.shape[0], -1)
 
-            # convert to NumPy only when necessary for statsmodels
-            # variance_flat_np = variance_flat.cpu().numpy()
-            # mc_chain_fourier_flat_features_np = mc_chain_fourier_flat_features.cpu().numpy()
 
             ind_min_variance = torch.argmin(variance_flat)
             chain_elem_min_variance = mc_chain_fourier_flat_features[:, ind_min_variance]
@@ -629,7 +469,6 @@ def sampling_builder(
     data_fidelity: DataFidelity,
     prior: Prior,
     params_algo: Dict = {},
-    callback: Callable = lambda X, *args, **kwargs: None,
     max_iter: int = 100,
     thresh_conv: float = 1e-3,
     burnin_ratio: float = 0.2,
@@ -651,7 +490,6 @@ def sampling_builder(
     :param burnin_ratio: Percentage of iterations for burn-in
     :param thinning: Integer to thin the Monte Carlo samples
     :param history_size: Number of most recent samples to store in memory. If `True`, all samples are stored. If `False`, no samples are stored. If an integer, it specifies the number of most recent samples to store. Default: 5
-    :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics.
     :param verbose: Whether to print progress
     :param Callable callback: A function that is called on every (thinned) sample state dictionary for diagnostics. It is called with the current sample `X`, the current `statistics` (a list of Welford objects), and the current iteration number `iter` as keyword arguments.
     :param kwargs: Additional keyword arguments passed to the iterator constructor when a string is provided as the iterator parameter

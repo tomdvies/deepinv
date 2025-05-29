@@ -4,31 +4,13 @@ import numpy as np
 import time as time
 from deepinv.physics import Physics
 from deepinv.optim.prior import Prior, ScorePrior
-from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
+from deepinv.sampling.sampling_iterators.sampling_iterator import SamplingIterator
 from deepinv.optim.data_fidelity import DataFidelity
 import wandb
 from typing import Dict, Optional, Tuple, Any
 
 from deepinv.optim import BurgEntropy
 
-
-# gradient of conjugate of phi
-def grad_phi_star(x):
-    if x.any() < 1e-6:
-        print("warning, div by almost zero")
-    return -1 / x
-
-
-# gradient of phi
-def grad_phi(x):
-    if x.any() < 1e-6:
-        print("warning, div by almost zero")
-    return -1 / x
-
-
-# second derivative of phi
-def d2_phi(x):
-    return 1 / x**2
 
 
 class MLAIterator(SamplingIterator):
@@ -62,40 +44,12 @@ class MLAIterator(SamplingIterator):
         **kwargs,
     ) -> Dict[str, Tensor]:
         x = X["x"]
-        # print(f"new iteration")
         noise = torch.randn_like(x) *torch.sqrt(2 * self.algo_params["step_size"] * self.potential.hessian(x))
-        # print(f"max: {torch.max(noise)} min: {torch.min(noise)}")
-        # lprior = (
-        #     -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
-        # )
-        # yk1 = grad_phi(x)
         yk1 = self.potential.grad(x)
-        # print(f"max: {torch.max(yk1)} min: {torch.min(yk1)}")
-        # yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
         lhood = -cur_data_fidelity.grad(x, y, physics)
-        # print(f"max: {torch.max(lhood)} min: {torch.min(lhood)}")
         lprior = (
             -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
         )
-        # print(f"max: {torch.max(lprior)} min: {torch.min(lprior)}")
         yk2 = yk1 + self.algo_params["step_size"] * (lhood + lprior) + noise
-        # print(f"max: {torch.max(yk2)} min: {torch.min(yk2)}")
         xk = self.potential.grad_conj(yk2).clamp(1e-6,None)
-        # print(f"max: {torch.max(xk)} min: {torch.min(xk)}")
-
-        # x_t = self.potential.grad_conj(
-        #         self.potential.grad(x) +
-        #         self.algo_params["step_size"] * (lhood + lprior)
-        #         + noise
-        # )
-        # x_t = self.potential.grad_conj(self.potential.grad(x) - tau * grad_f(x, noisy)
-        #                 - (config.alpha * tau * cur_prior.grad(x, sigma))
-        #                 + torch.sqrt(2 * tau * self.potential.hessian(x)) * torch.randn_like(x))
-        # wandb.log({"noise": wandb.Image(noise.squeeze().cpu()),
-        #            "lhood": wandb.Image(lhood.squeeze().cpu()),
-        #            "lprior": wandb.Image(lprior.squeeze().cpu()),
-        #            "potential_grad_x": wandb.Image(self.potential.grad(x).squeeze().cpu()),
-        #            "hessian": wandb.Image(self.potential.hessian(x).squeeze().cpu()),
-        #            "grad_conj": wandb.Image(self.potential.grad(x).squeeze().cpu()),
-        #            })
         return {"x": xk}  # Return the updated x_t

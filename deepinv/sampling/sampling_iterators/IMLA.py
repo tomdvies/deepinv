@@ -7,7 +7,7 @@ from deepinv.optim.prior import Prior
 from deepinv.optim.distance import L2Distance
 from deepinv.optim.data_fidelity import DataFidelity
 from deepinv.optim.optimizers import optim_builder
-from deepinv.sampling.sampling_iterators.sample_iterator import SamplingIterator
+from deepinv.sampling.sampling_iterators.sampling_iterator import SamplingIterator
 
 
 # TODO: add check for explicit prior

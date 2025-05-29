@@ -7,7 +7,7 @@ import numpy as np
 from deepinv.physics import LinearPhysics
 from deepinv.optim import PnP
 from deepinv.physics import Physics
-from deepinv.optim.prior import ScorePrior
+from deepinv.optim.prior import Prior
 from deepinv.sampling.sampling_iterators.sampling_iterator import SamplingIterator
 from deepinv.optim.data_fidelity import DataFidelity
 
@@ -71,7 +71,9 @@ class ULAIterator(SamplingIterator):
             missing_params.append("step_size")
         if "alpha" not in algo_params:
             missing_params.append("alpha")
-        # if "sigma" not in algo_params:
+        if "sigma" not in algo_params:
+            # Assume not a score prior
+            self.algo_params["sigma"] = None
         #     missing_params.append("sigma")
 
         if missing_params:
@@ -87,11 +89,12 @@ class ULAIterator(SamplingIterator):
         y: Tensor,
         physics: Physics,
         cur_data_fidelity: DataFidelity,
-        cur_prior: ScorePrior,
+        cur_prior: Prior,
         iteration: int,
         *args,
         **kwargs,
     ) -> Dict[str, Tensor]:
+        #TODO: re-write docs for explicit/score priors
         r"""
         Performs a single ULA sampling step using the Unadjusted Langevin Algorithm.
 
@@ -107,17 +110,18 @@ class ULAIterator(SamplingIterator):
         :param torch.Tensor y: Observed measurements/data tensor
         :param Physics physics: Forward operator :math:`A` that models the measurement process
         :param DataFidelity cur_data_fidelity: Negative log-likelihood function
-        :param ScorePrior cur_prior: Score-based prior model for :math:`\nabla \log p(x)`
+        :param Prior cur_prior: Score-based prior model for :math:`\nabla \log p(x)`
         :param int iteration: Current iteration number in the sampling process (zero-indexed)
 
-        :return: Dictionary `{"est": x}` containing the next state :math:`x_{t+1}` in the Markov chain.
+        :return: Dictionary `{"x": x}` containing the next state :math:`x_{t+1}` in the Markov chain.
         :rtype: Dict
         """
         x = X["x"]
         noise = torch.randn_like(x) * np.sqrt(2 * self.algo_params["step_size"])
         lhood = -cur_data_fidelity.grad(x, y, physics)
+        #BUG: check if prior is a score prior
         lprior = (
-            -cur_prior.grad(x, self.algo_params["sigma"]) * self.algo_params["alpha"]
+            -cur_prior.grad(x, sigma_denoiser=self.algo_params["sigma"]) * self.algo_params["alpha"]
         )
         x_t = x + self.algo_params["step_size"] * (lhood + lprior) + noise
         if self.clip:

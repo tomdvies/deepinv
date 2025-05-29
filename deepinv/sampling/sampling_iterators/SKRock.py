@@ -70,6 +70,7 @@ class SKRockIterator(SamplingIterator):
             missing_params.append("inner_iter")
         if "eta" not in algo_params:
             missing_params.append("eta")
+            #TODO: explicit prior
         if "sigma" not in algo_params:
             missing_params.append("sigma")
 

@@ -7,7 +7,8 @@ from .sampling_iterators import (
     SamplingIterator,
     SKROCKIterator,
     MYULAIterator,
-    DiffusionIterator
+    DiffusionIterator,
+    lsMYULAIterator
 )
 from . import diffusion_sde, sde_solver
 from .noisy_datafidelity import NoisyDataFidelity, DPSDataFidelity
