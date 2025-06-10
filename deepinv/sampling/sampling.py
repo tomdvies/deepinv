@@ -286,7 +286,7 @@ class BaseSampling(Reconstructor):
                 return means[0], vars[0]
         return means, vars
 
-
+    # TODO: take min/max/median from current image (index may change but ULLN will be fine in limit)
     def plot_acf(self, g_statistic: Union[Callable, None] = None, lags: Union[int, None] = None,
                  title: str = "ACF Plot (Tensor)", save_path: Union[str, None] = None,
                  img_type: str = "png", **kwargs):

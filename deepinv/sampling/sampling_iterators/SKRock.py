@@ -121,7 +121,7 @@ class SKRockIterator(SamplingIterator):
         kappa1 = self.algo_params["inner_iter"] * (w1 / w0)  # parameter \kappa_1
 
         # Sample noise
-        noise = torch.randn_like(x) * np.sqrt(2 * self.algo_params["step_size"])
+        noise = torch.randn_like(x) * torch.sqrt(2 * self.algo_params["step_size"])
 
         # First internal iteration (s=1)
         xts_2 = x.clone()
