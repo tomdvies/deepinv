@@ -41,6 +41,7 @@ We consider the following two choices of :math:`h`:
 """
 
 import torch
+import deepinv as dinv
 from torch.utils.data import DataLoader
 from deepinv.datasets import PatchDataset
 from deepinv import Trainer
@@ -265,3 +266,87 @@ plot(
     ],
     ["Ground truth", "Filtered Backprojection", "EPLL", "PatchNR"],
 )
+
+#%%
+import wandb
+import random
+
+#%%
+
+#define callback
+def call(statistics, iter, **kwargs):
+    psnr_callback = dinv.metric.PSNR()(test_imgs, statistics[0].mean()).item()
+    print(f"PSNR: {psnr_callback:.2f} dB")
+    #log psnr to wandb
+    wandb.log({"PSNR": psnr_callback}, step=iter)
+    # log images
+    wandb.log({"Posterior mean" : wandb.Image(statistics[0].mean().cpu().squeeze(), caption="Posterior mean"),
+           "Posterior std" : wandb.Image(statistics[0].var().sqrt().cpu().squeeze(), caption="Posterior std")})
+
+    
+
+# regularization = lam_patchnr
+regularization = lam_epll
+step_size = torch.tensor(1e-4).to(device)
+# sigma_denoiser = 2 / 255
+sigma_denoiser = 1
+
+iterations = int(10000) if torch.cuda.is_available() else 100
+thin = 1000
+params = {
+    "step_size": step_size,
+    "alpha": regularization,
+    "sigma": sigma_denoiser,
+    "inner_iter": 20,
+    "eta": 0.05,
+    "iterations": iterations,
+    "thinning": thin,
+}
+f = dinv.sampling.sampling_builder(
+    "MLA",
+    # prior=patchnr_prior,
+    prior=epll_prior,
+    data_fidelity=data_fidelity,
+    max_iter=iterations,
+    params_algo=params,
+    callback=call,
+    burnin_ratio=0.1,
+    thinning=thin,
+    verbose=True,
+)
+
+#%% initialize wandb
+
+project = "mla_patch_priors_ct"
+counter = random.randint(0, 1000)
+exp_name = "epll_" + str(counter)
+wandb.init(entity='bloom', project="tk_"+ project, 
+           name = exp_name , config=params, save_code=True)
+
+#%% log measurement
+wandb.log({"Observation" : wandb.Image((observation/torch.max(observation)).cpu().squeeze(), caption="Observation")})
+
+
+# %%
+mean, var = f.sample(observation, physics, x_init=fbp)
+
+#%%
+# compute PSNR
+print(f"Linear reconstruction PSNR: {dinv.metric.PSNR()(test_imgs, fbp).item():.2f} dB")
+print(f"Posterior mean PSNR: {dinv.metric.PSNR()(test_imgs, mean).item():.2f} dB")
+
+# plot results
+error = (mean - test_imgs).abs().sum(dim=1).unsqueeze(1)  # per pixel average abs. error
+std = var.sum(dim=1).unsqueeze(1).sqrt()  # per pixel average standard dev.
+imgs = [observation, fbp, test_imgs, mean, std / std.flatten().max(), error / error.flatten().max()]
+plot(
+    imgs,
+    titles=["measurement", "lin recon", "ground truth", "post. mean", "post. std", "abs. error"],
+)
+
+#%% log results
+wandb.log({"Posterior mean" : wandb.Image(mean.cpu().squeeze(), caption="Posterior mean"),
+           "Posterior std" : wandb.Image(std.cpu().squeeze(), caption="Posterior std"),
+           "Posterior error" : wandb.Image(error.cpu().squeeze(), caption="Posterior error")})
+
+# %%
