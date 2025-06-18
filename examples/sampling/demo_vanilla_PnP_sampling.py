@@ -11,11 +11,13 @@ from pathlib import Path
 import torch
 from deepinv.models import DnCNN
 from deepinv.optim.data_fidelity import L2
-from deepinv.optim.prior import PnP
-from deepinv.optim.optimizers import optim_builder
 from deepinv.utils.demo import load_url_image, get_image_url
-from deepinv.utils.plotting import plot, plot_curves
-import matplotlib.pyplot as plt
+from deepinv.utils.plotting import plot
+import wandb
+import random
+
+import os
+os.environ["WANDB_NOTEBOOK_NAME"] = "demo_vanilla_PnP_sampling.py"
 
 # %%
 # Setup paths for data loading and results.
@@ -33,7 +35,7 @@ torch.manual_seed(0)
 device = dinv.utils.get_freer_gpu() if torch.cuda.is_available() else "cpu"
 # Set up the variable to fetch dataset and operators.
 method = "PnP"
-img_size = 32
+img_size = 64
 x = load_url_image(
     get_image_url("SheppLogan.png"),
     img_size=img_size,
@@ -73,17 +75,12 @@ num_workers = 4 if torch.cuda.is_available() else 0
 # %%
 # Set up the PnP algorithm to solve the inverse problem.
 # --------------------------------------------------------------------------------
-# We use the Proximal Gradient Descent optimization algorithm.
-# The algorithm alternates between a denoising step and a gradient descent step.
-# The denoising step is performed by a DNCNN pretrained denoiser :class:`deepinv.models.DnCNN`.
+# We use DNCNN pretrained denoiser :class:`deepinv.models.DnCNN`.
 #
 # Set up the PnP algorithm parameters : the ``stepsize``, ``g_param`` the noise level of the denoiser.
 # Attention: The choice of the stepsize is crucial as it also defines the amount of regularization.  Indeed, the regularization parameter ``lambda`` is implicitly defined by the stepsize.
 # Both the stepsize and the noise level of the denoiser control the regularization power and should be tuned to the specific problem.
 # The following parameters have been chosen manually.
-params_algo = {"stepsize": 0.01 * SCALING, "g_param": noise_level_img}
-max_iter = 100
-early_stop = True
 
 # Select the data fidelity term
 data_fidelity = L2()
@@ -92,33 +89,10 @@ data_fidelity = L2()
 denoiser = DnCNN(
     in_channels=n_channels,
     out_channels=n_channels,
-    pretrained="download",  # automatically downloads the pretrained weights, set to a path to use custom weights.
+    pretrained="download_lipschitz",  # automatically downloads the pretrained weights, set to a path to use custom weights.
     device=device,
 )
-
-prior = dinv.optim.PnP(denoiser=denoiser)
-
-# Logging parameters
-verbose = True
-plot_convergence_metrics = True  # compute performance and convergence metrics along the algorithm, curves saved in RESULTS_DIR
-
-# instantiate the algorithm class to solve the IP problem.
-# initialize with the rescaled adjoint such that the initialization lives already at the correct scale
-model = optim_builder(
-    iteration="PGD",
-    prior=prior,
-    data_fidelity=data_fidelity,
-    early_stop=early_stop,
-    max_iter=max_iter,
-    verbose=verbose,
-    params_algo=params_algo,
-    custom_init=lambda y, physics: {
-        "est": (physics.A_adjoint(y) * SCALING, physics.A_adjoint(y) * SCALING)
-    },
-)
-
-# Set the model to evaluation mode. We do not require training here.
-model.eval()
+prior = dinv.optim.ScorePrior(denoiser=denoiser)
 
 
 # %%
@@ -133,26 +107,75 @@ x_lin = (
     physics.A_adjoint(y) * SCALING
 )  # rescaled linear reconstruction with the adjoint operator
 
-# run the model on the problem.
-with torch.no_grad():
-    x_model, metrics = model(
-        y, physics, x_gt=x, compute_metrics=True
-    )  # reconstruction with PnP algorithm
 
-# compute PSNR
-print(f"Linear reconstruction PSNR: {dinv.metric.PSNR()(x, x_lin).item():.2f} dB")
-print(f"PnP reconstruction PSNR: {dinv.metric.PSNR()(x, x_model).item():.2f} dB")
+#%%
+iterations = 100000
+sigma_denoiser = 2 / 255
+thin = 10000
+algo = "MLA"
+#algo = "SKROCK"
 
-# plot images. Images are saved in RESULTS_DIR.
-imgs = [y, x, x_lin, x_model]
-plot(
-    imgs,
-    titles=["Input", "GT", "Linear", "Recons."],
-    save_dir=RESULTS_DIR / "images",
-    show=True,
+params = {
+    "step_size": 0.01 * SCALING,
+    "alpha": noise_level_img * 20,
+    "sigma": sigma_denoiser,
+    "inner_iter": 10,
+    "eta": 0.05,
+    "iterations": iterations,
+    "thin": thin,
+    "algo": algo,
+}
+
+def call(statistics, iter, **kwargs):
+    psnr_log = dinv.metric.PSNR()(x, statistics[0].mean()).item()
+    print(f"PSNR: {psnr_log:.2f} dB")
+    wandb.log({"PSNR" : psnr_log,
+               "Variance" : wandb.Image(statistics[0].var().cpu().squeeze(),
+                                        caption="Variance"),
+               "Posterior mean" : wandb.Image(statistics[0].mean().cpu().squeeze(),
+                                        caption="Mean")},
+               step=iter+1)
+
+
+f = dinv.sampling.sampling_builder(
+    algo,
+    prior=prior,
+    data_fidelity=data_fidelity,
+    max_iter=iterations,
+    params_algo=params,
+    callback=call,
+    burnin_ratio=0.1,
+    thinning=thin,
+    verbose=True,
 )
 
-# plot convergence curves. Metrics are saved in RESULTS_DIR.
-if plot_convergence_metrics:
-    plot_curves(metrics, save_dir=RESULTS_DIR / "curves", show=True)
+#%% init wandb
+project = "mla_ct_shepp"
+counter = random.randint(0, 1000)
+exp_name = "shepp_logan_gauss_" + str(counter)
+wandb.init(entity='bloom', project="tk_"+ project, 
+           name = exp_name , config=params, save_code=True)
 
+#%% log measurement
+wandb.log({"Observation" : wandb.Image((y/torch.max(y)).cpu().squeeze(), caption="Observation")})
+
+#%% run sampling
+mean, var = f.sample(y, physics, 
+                     x_init=physics.A_dagger(y))
+
+# compute PSNR
+print(f"Linear reconstruction PSNR: {dinv.metric.PSNR()(x, physics.A_dagger(y)).item():.2f} dB")
+print(f"Posterior mean PSNR: {dinv.metric.PSNR()(x, mean).item():.2f} dB")
+
+#%%
+# plot results
+error = (mean - x).abs().sum(dim=1).unsqueeze(1)  # per pixel average abs. error
+std = var.sum(dim=1).unsqueeze(1).sqrt()  # per pixel average standard dev.
+imgs = [y, physics.A_dagger(y), x, mean, std, error ]
+plot(
+    imgs,
+    titles=["measurement", "lin recon", "ground truth", "post. mean", "post. std", "abs. error"],
+)
+
+# %%
+wandb.finish()

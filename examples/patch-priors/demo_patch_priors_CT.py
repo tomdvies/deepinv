@@ -285,27 +285,30 @@ def call(statistics, iter, **kwargs):
 
     
 
-# regularization = lam_patchnr
-regularization = lam_epll
+regularization = lam_patchnr
+# regularization = lam_epll
 step_size = torch.tensor(1e-4).to(device)
 # sigma_denoiser = 2 / 255
 sigma_denoiser = 1
 
-iterations = int(10000) if torch.cuda.is_available() else 100
-thin = 1000
+iterations = int(500) if torch.cuda.is_available() else 100
+thin = 10
+algo = "MLA"  # or SKROCK
+
 params = {
     "step_size": step_size,
     "alpha": regularization,
     "sigma": sigma_denoiser,
-    "inner_iter": 20,
+    "inner_iter": 10,
     "eta": 0.05,
     "iterations": iterations,
     "thinning": thin,
+    "algo" : algo,
 }
 f = dinv.sampling.sampling_builder(
-    "MLA",
-    # prior=patchnr_prior,
-    prior=epll_prior,
+    algo,
+    prior=patchnr_prior,
+    # prior=epll_prior,
     data_fidelity=data_fidelity,
     max_iter=iterations,
     params_algo=params,
@@ -319,13 +322,14 @@ f = dinv.sampling.sampling_builder(
 
 project = "mla_patch_priors_ct"
 counter = random.randint(0, 1000)
-exp_name = "epll_" + str(counter)
+# exp_name = "epll_" + str(counter)
+exp_name = "patchnr_" + str(counter) # "patchnr_skr_"
 wandb.init(entity='bloom', project="tk_"+ project, 
            name = exp_name , config=params, save_code=True)
 
-#%% log measurement
+#%% log measurement & GT
 wandb.log({"Observation" : wandb.Image((observation/torch.max(observation)).cpu().squeeze(), caption="Observation")})
-
+wandb.log({"Ground truth" : wandb.Image((test_imgs).cpu().squeeze(), caption="Ground truth")})
 
 # %%
 mean, var = f.sample(observation, physics, x_init=fbp)
@@ -350,3 +354,4 @@ wandb.log({"Posterior mean" : wandb.Image(mean.cpu().squeeze(), caption="Posteri
            "Posterior error" : wandb.Image(error.cpu().squeeze(), caption="Posterior error")})
 
 # %%
+wandb.finish()
